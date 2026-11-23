@@ -146,8 +146,17 @@ function boot(){
   if(!st.key){show("keygate");return}
   loadLibrary();
 }
-$("keygo").onclick=()=>{const v=$("keyin").value.trim();if(v){location.hash="k="+v;st.key=v;
-  try{localStorage.setItem("cs_key",v)}catch(e){};loadLibrary()}};
+function submitKey(){
+  const raw=$("keyin").value.trim();
+  if(!raw)return;
+  const m=raw.match(/k=([a-f0-9]{16,})/i);      // accept a pasted full link too
+  const v=m?m[1]:raw;
+  location.hash="k="+v;st.key=v;
+  try{localStorage.setItem("cs_key",v)}catch(e){}
+  loadLibrary();
+}
+$("keygo").onclick=submitKey;
+$("keyin").addEventListener("keydown",e=>{if(e.key==="Enter")submitKey()});
 $("logo").onclick=()=>{if(st.key){stopSync();show("home")}};
 $("back").onclick=()=>{stopSync();if(player&&player.pauseVideo)player.pauseVideo();show("home")};
 
