@@ -75,7 +75,12 @@ body{background:#fff;color:#000}.line.active{background:none}
 
 <main id="home" class="hidden">
   <div class="card">
-    <input id="q" placeholder="Search title or artist" style="width:100%">
+    <input id="q" placeholder="Search your songs — or paste a YouTube link to add one" style="width:100%">
+    <div id="addcard" class="hidden" style="margin-top:10px;padding:12px;border:1px solid var(--accent);border-radius:8px;">
+      <p style="margin:0 0 8px;font-size:14px;">Add this song? Your Mac will prepare it (it must be on, with ChordScribe running).</p>
+      <button id="addgo" style="background:var(--fill);color:#fff;border:none;">Add song</button>
+    </div>
+    <ul id="reqs" style="list-style:none;padding:0;margin:10px 0 0;"></ul>
     <ul id="library"></ul>
     <p id="empty" class="muted hidden">No songs yet. Process a song on your Mac — it appears here automatically.</p>
   </div>
@@ -125,7 +130,7 @@ if(q.startsWith("7"))return p.r+"7";return p.r}
 function disp(sym){let c=sym;if(st.simp)c=simp(c);return trc(c,st.tr-st.capo)}
 
 /* state + api */
-const st={key:null,songs:[],song:null,tr:0,capo:0,simp:false,rom:true,la:null,lb:null,raf:0,units:[],chords:[]};
+const st={key:null,songs:[],song:null,reqTimer:0,tr:0,capo:0,simp:false,rom:true,la:null,lb:null,raf:0,units:[],chords:[]};
 const $=id=>document.getElementById(id);
 async function rpc(fn,args){
   const r=await fetch(`${SUPA}/rest/v1/rpc/${fn}`,{method:"POST",
@@ -165,7 +170,45 @@ async function loadLibrary(){
   try{st.songs=await rpc("list_songs",{lib_key:st.key})||[]}
   catch(e){alert("Could not load library — check the link/key.");show("keygate");return}
   renderLibrary();
+  loadRequests();
 }
+
+/* remote song requests: paste a YouTube link, the Mac prepares it */
+const YTRE=/(?:youtube\.com|youtu\.be)\//i;
+async function loadRequests(){
+  let reqs=[];
+  try{reqs=await rpc("list_requests",{lib_key:st.key})||[]}catch(e){}
+  const ul=$("reqs");ul.innerHTML="";
+  reqs.forEach(r=>{
+    const li=document.createElement("li");
+    li.style.cssText="padding:8px 6px;border-bottom:1px solid var(--line);font-size:13px;color:var(--muted)";
+    const label=r.status==="processing"?"⏳ preparing on your Mac now…"
+      :r.status==="failed"?("✗ failed — "+(r.note||"try another video"))
+      :"• waiting for your Mac to be on…";
+    li.textContent=label+"  ("+r.url.slice(0,60)+")";
+    ul.appendChild(li);
+  });
+  if(reqs.some(r=>r.status!=="failed")&&!st.reqTimer){
+    st.reqTimer=setInterval(async()=>{
+      if($("home").classList.contains("hidden"))return;
+      await loadRequests();
+      try{st.songs=await rpc("list_songs",{lib_key:st.key})||[];renderLibrary()}catch(e){}
+    },30000);
+  }
+}
+$("q").addEventListener("input",()=>{
+  $("addcard").classList.toggle("hidden",!YTRE.test($("q").value));
+});
+$("addgo").onclick=async()=>{
+  const url=$("q").value.trim();
+  $("addgo").disabled=true;
+  try{
+    await rpc("add_request",{lib_key:st.key,song_url:url});
+    $("q").value="";$("addcard").classList.add("hidden");
+    loadRequests();
+  }catch(e){alert("Could not add: "+e.message)}
+  $("addgo").disabled=false;
+};
 function renderLibrary(){
   const q=($("q").value||"").toLowerCase();
   const list=st.songs.filter(s=>(s.title+" "+s.artist).toLowerCase().includes(q));
